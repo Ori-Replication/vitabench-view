@@ -69,6 +69,7 @@
         </div>
         <div id="summary" class="summary muted">尚未加载 simulation 数据。</div>
       </div>
+      <div id="evaluationResult" class="card" style="display:none"></div>
 
       <div id="timeline" class="timeline"></div>
       <p id="placeholder" class="empty">请选择结果文件并渲染轨迹。</p>
@@ -171,6 +172,45 @@
         return "unknown";
       }
 
+      function getSimulationStatus(sim) {
+        const reward = Number(sim?.reward ?? sim?.reward_info?.reward);
+        const termination = String(sim?.termination_reason || "").toLowerCase();
+        if (!Number.isNaN(reward)) {
+          if (reward > 0) return { emoji: "✅", label: "成功" };
+          if (reward <= 0) return { emoji: "❌", label: "失败" };
+        }
+        if (termination.includes("agent_stop") || termination.includes("user_stop")) return { emoji: "✅", label: "结束" };
+        if (termination.includes("max_steps") || termination.includes("too_many_errors") || termination.includes("invalid")) {
+          return { emoji: "❌", label: "异常结束" };
+        }
+        return { emoji: "❓", label: "未知" };
+      }
+
+      function buildEvaluationHtml(sim) {
+        const ev = sim?.reward_info || null;
+        if (!ev) {
+          return `<h3 style="margin:0 0 8px">最终评估结果</h3><div class="muted">该 simulation 未包含 reward_info。</div>`;
+        }
+        const rubrics = Array.isArray(ev.nl_rubrics) ? ev.nl_rubrics : [];
+        const metCount = rubrics.filter((x) => x && x.met === true).length;
+        let html =
+          `<h3 style="margin:0 0 8px">最终评估结果（Evaluator）</h3>` +
+          `<div class="summary">reward=<code>${esc(ev.reward)}</code> ｜ rubrics_met=<code>${metCount}/${rubrics.length}</code></div>`;
+        if (ev.reward_breakdown) {
+          html += `<details open><summary>Reward Breakdown</summary><pre>${esc(JSON.stringify(ev.reward_breakdown, null, 2))}</pre></details>`;
+        }
+        if (rubrics.length > 0) {
+          html += `<details open><summary>NL Rubrics 判定明细</summary><pre>${esc(JSON.stringify(rubrics, null, 2))}</pre></details>`;
+        }
+        if (ev.info) {
+          html += `<details><summary>Evaluator Additional Info</summary><pre>${esc(JSON.stringify(ev.info, null, 2))}</pre></details>`;
+        }
+        if (ev.window_evaluations) {
+          html += `<details><summary>Sliding Window Evaluations</summary><pre>${esc(JSON.stringify(ev.window_evaluations, null, 2))}</pre></details>`;
+        }
+        return html;
+      }
+
       function buildReceivedContext(messages, idx, sim, role) {
         const received = [];
         const injected = buildInjectedSystemBlocks(sim);
@@ -235,7 +275,8 @@
         simulations.forEach((sim, i) => {
           const o = document.createElement("option");
           o.value = String(i);
-          o.textContent = `#${i} task=${sim.task_id ?? "-"} trial=${sim.trial ?? "-"} msgs=${Array.isArray(sim.messages) ? sim.messages.length : 0}`;
+          const st = getSimulationStatus(sim);
+          o.textContent = `${st.emoji} #${i} task=${sim.task_id ?? "-"} trial=${sim.trial ?? "-"} msgs=${Array.isArray(sim.messages) ? sim.messages.length : 0}`;
           sel.appendChild(o);
         });
       }
@@ -246,13 +287,18 @@
         const sim = simulations[idx];
         const timeline = document.getElementById("timeline");
         const placeholder = document.getElementById("placeholder");
+        const evalEl = document.getElementById("evaluationResult");
         if (!sim) {
           timeline.innerHTML = "";
+          evalEl.style.display = "none";
           placeholder.style.display = "block";
           return;
         }
         placeholder.style.display = "none";
+        evalEl.style.display = "block";
+        evalEl.innerHTML = buildEvaluationHtml(sim);
         const msgs = Array.isArray(sim.messages) ? sim.messages : [];
+        const st = getSimulationStatus(sim);
         let promptTotal = 0;
         let completionTotal = 0;
         let assistantPrompt = 0;
@@ -274,7 +320,7 @@
         }
         const totalTokens = promptTotal + completionTotal;
         document.getElementById("summary").innerHTML =
-          `task=<code>${esc(sim.task_id ?? "-")}</code> trial=<code>${esc(sim.trial ?? "-")}</code> termination=<code>${esc(sim.termination_reason ?? "-")}</code> reward=<code>${esc(sim.reward ?? "-")}</code> messages=<code>${msgs.length}</code><br/>` +
+          `status=<code>${st.emoji} ${st.label}</code> task=<code>${esc(sim.task_id ?? "-")}</code> trial=<code>${esc(sim.trial ?? "-")}</code> termination=<code>${esc(sim.termination_reason ?? "-")}</code> reward=<code>${esc(sim.reward ?? sim?.reward_info?.reward ?? "-")}</code> messages=<code>${msgs.length}</code><br/>` +
           `tokens(total)=<code>${totalTokens}</code> prompt=<code>${promptTotal}</code> completion=<code>${completionTotal}</code><br/>` +
           `assistant: prompt=<code>${assistantPrompt}</code>, completion=<code>${assistantCompletion}</code> ｜ user(sim): prompt=<code>${userPrompt}</code>, completion=<code>${userCompletion}</code>`;
         timeline.innerHTML = msgs.map((m, i) => renderMessage(msgs, sim, m, i, keyword)).filter(Boolean).join("");
