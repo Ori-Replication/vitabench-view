@@ -94,14 +94,35 @@
         return "unknown";
       }
 
-      function renderMessage(msg, idx, keyword) {
+      function buildReceivedContext(messages, idx) {
+        const received = [];
+        for (let i = 0; i < idx; i += 1) {
+          const m = messages[i];
+          if (!m || !m.role) continue;
+          const item = { role: m.role };
+          if (m.content != null && m.content !== "") item.content = m.content;
+          if (m.tool_calls) item.tool_calls = m.tool_calls;
+          if (m.tool_call_id) item.tool_call_id = m.tool_call_id;
+          if (m.name) item.name = m.name;
+          received.push(item);
+        }
+        return received;
+      }
+
+      function renderMessage(messages, msg, idx, keyword) {
         const role = getRoleKind(msg);
         const text = JSON.stringify(msg).toLowerCase();
         if (keyword && !text.includes(keyword)) return "";
 
         const reason = msg?.reasoning || msg?.reasoning_content || msg?.raw_data?.message?.reasoning_content;
+        const receivedContext = buildReceivedContext(messages, idx);
         const body = [];
-        if (reason) body.push(`<div><strong>思维链</strong></div><pre>${esc(reason)}</pre>`);
+        if ((role === "assistant" || role === "user") && receivedContext.length) {
+          body.push(`<details><summary>本轮接收到的完整信息（按顺序重建）</summary><pre>${esc(JSON.stringify(receivedContext, null, 2))}</pre></details>`);
+        }
+        if (reason) {
+          body.push(`<details><summary>思维链（点击展开）</summary><pre>${esc(reason)}</pre></details>`);
+        }
         if (msg?.content != null && msg?.content !== "") body.push(`<div style="margin-top:8px"><strong>内容</strong></div><pre>${esc(msg.content)}</pre>`);
         if (msg?.tool_calls?.length) body.push(`<details><summary>tool_calls</summary><pre>${esc(JSON.stringify(msg.tool_calls, null, 2))}</pre></details>`);
         if (msg?.raw_data) body.push(`<details><summary>raw_data</summary><pre>${esc(JSON.stringify(msg.raw_data, null, 2))}</pre></details>`);
@@ -151,7 +172,7 @@
         const msgs = Array.isArray(sim.messages) ? sim.messages : [];
         document.getElementById("summary").innerHTML =
           `task=<code>${esc(sim.task_id ?? "-")}</code> trial=<code>${esc(sim.trial ?? "-")}</code> termination=<code>${esc(sim.termination_reason ?? "-")}</code> reward=<code>${esc(sim.reward ?? "-")}</code> messages=<code>${msgs.length}</code>`;
-        timeline.innerHTML = msgs.map((m, i) => renderMessage(m, i, keyword)).filter(Boolean).join("");
+        timeline.innerHTML = msgs.map((m, i) => renderMessage(msgs, m, i, keyword)).filter(Boolean).join("");
       }
 
       async function loadPayload(text) {
