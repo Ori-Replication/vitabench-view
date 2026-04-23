@@ -253,8 +253,30 @@
         }
         placeholder.style.display = "none";
         const msgs = Array.isArray(sim.messages) ? sim.messages : [];
+        let promptTotal = 0;
+        let completionTotal = 0;
+        let assistantPrompt = 0;
+        let assistantCompletion = 0;
+        let userPrompt = 0;
+        let userCompletion = 0;
+        for (const m of msgs) {
+          const p = Number(m?.usage?.prompt_tokens || 0);
+          const c = Number(m?.usage?.completion_tokens || 0);
+          promptTotal += p;
+          completionTotal += c;
+          if (m?.role === "assistant") {
+            assistantPrompt += p;
+            assistantCompletion += c;
+          } else if (m?.role === "user") {
+            userPrompt += p;
+            userCompletion += c;
+          }
+        }
+        const totalTokens = promptTotal + completionTotal;
         document.getElementById("summary").innerHTML =
-          `task=<code>${esc(sim.task_id ?? "-")}</code> trial=<code>${esc(sim.trial ?? "-")}</code> termination=<code>${esc(sim.termination_reason ?? "-")}</code> reward=<code>${esc(sim.reward ?? "-")}</code> messages=<code>${msgs.length}</code>`;
+          `task=<code>${esc(sim.task_id ?? "-")}</code> trial=<code>${esc(sim.trial ?? "-")}</code> termination=<code>${esc(sim.termination_reason ?? "-")}</code> reward=<code>${esc(sim.reward ?? "-")}</code> messages=<code>${msgs.length}</code><br/>` +
+          `tokens(total)=<code>${totalTokens}</code> prompt=<code>${promptTotal}</code> completion=<code>${completionTotal}</code><br/>` +
+          `assistant: prompt=<code>${assistantPrompt}</code>, completion=<code>${assistantCompletion}</code> ｜ user(sim): prompt=<code>${userPrompt}</code>, completion=<code>${userCompletion}</code>`;
         timeline.innerHTML = msgs.map((m, i) => renderMessage(msgs, sim, m, i, keyword)).filter(Boolean).join("");
       }
 
