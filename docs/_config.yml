@@ -1,0 +1,6 @@
+title: Vita Trace Viewer
+description: Static readonly trace viewer for VitaBench
+theme: null
+plugins: []
+sass:
+  sass_dir: _sass
