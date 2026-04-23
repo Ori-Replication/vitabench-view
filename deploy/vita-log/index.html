@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vita Log Viewer</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; background: #f6f8fb; color: #1f2937; }
+      .top { background: #0f172a; color: #e2e8f0; padding: 10px 16px; }
+      .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+      .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+      .row { display: flex; flex-wrap: wrap; gap: 12px; }
+      .field { flex: 1; min-width: 240px; }
+      label { font-size: 12px; color: #64748b; display: block; margin-bottom: 4px; }
+      input, select, button { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid #cbd5e1; }
+      button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
+      .muted { color: #64748b; font-size: 12px; }
+      .events { max-height: 72vh; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+      .event { border-bottom: 1px solid #eef2f7; padding: 8px 4px; }
+      .event:last-child { border-bottom: none; }
+      .head { font-size: 13px; font-weight: bold; margin-bottom: 6px; }
+      pre { margin: 0; padding: 8px; border-radius: 8px; background: #0b1020; color: #d1d5db; font-size: 12px; overflow: auto; }
+      .warn { color: #b45309; }
+    </style>
+  </head>
+  <body>
+    <div class="top"><strong>Vita Log Viewer</strong>（GitHub Pages 静态版）</div>
+    <div class="wrap">
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label>方式 A：上传本地 jsonl 日志</label>
+            <input id="fileInput" type="file" accept=".jsonl,.txt,.log" />
+          </div>
+          <div class="field">
+            <label>方式 B：加载仓库内日志（deploy/vita-log/data）</label>
+            <select id="embeddedSelect"></select>
+          </div>
+          <div class="field" style="flex:0">
+            <label>&nbsp;</label>
+            <button id="loadEmbeddedBtn" type="button">加载仓库日志</button>
+          </div>
+        </div>
+        <p class="muted">
+          只上传/发布脱敏后的日志。请勿包含 Authorization、Bearer、sk_、cookie 等敏感字段。
+        </p>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <div class="field">
+            <label>Event Type 过滤</label>
+            <input id="eventType" placeholder="例如 tool_call_finished" />
+          </div>
+          <div class="field">
+            <label>Task ID 过滤</label>
+            <input id="taskId" placeholder="例如 1" />
+          </div>
+          <div class="field">
+            <label>关键词</label>
+            <input id="q" placeholder="全文搜索 JSON 文本" />
+          </div>
+          <div class="field">
+            <label>数量上限</label>
+            <input id="limit" type="number" value="500" />
+          </div>
+        </div>
+        <p id="meta" class="muted">尚未加载日志。</p>
+        <div id="warning" class="muted warn"></div>
+        <div id="events" class="events"></div>
+      </div>
+    </div>
+
+    <script>
+      let allEvents = [];
+
+      function escapeHtml(s) {
+        return String(s ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      function parseJsonl(text) {
+        const out = [];
+        for (const raw of text.split(/\r?\n/)) {
+          const line = raw.trim();
+          if (!line) continue;
+          try {
+            out.push(JSON.parse(line));
+          } catch (_) {
+            // ignore invalid lines
+          }
+        }
+        return out;
+      }
+
+      function hasPotentialSecret(text) {
+        return /Authorization|Bearer\\s+[A-Za-z0-9\\-\\._~\\+/]+=*|sk_[A-Za-z0-9]+|cookie/i.test(text);
+      }
+
+      function render() {
+        const eventType = document.getElementById("eventType").value.trim();
+        const taskId = document.getElementById("taskId").value.trim();
+        const q = document.getElementById("q").value.trim().toLowerCase();
+        const limit = Number(document.getElementById("limit").value || "500");
+
+        let filtered = allEvents.filter((e) => {
+          if (eventType && String(e.event_type || "") !== eventType) return false;
+          if (taskId && String(e.task_id ?? "") !== taskId) return false;
+          if (q) {
+            const text = JSON.stringify(e).toLowerCase();
+            if (!text.includes(q)) return false;
+          }
+          return true;
+        });
+
+        const truncated = filtered.length > limit;
+        if (truncated) filtered = filtered.slice(0, limit);
+
+        document.getElementById("meta").textContent =
+          `总事件 ${allEvents.length}，命中 ${filtered.length}` + (truncated ? `（已截断到 ${limit}）` : "");
+
+        const box = document.getElementById("events");
+        box.innerHTML = "";
+        for (const event of filtered) {
+          const div = document.createElement("div");
+          div.className = "event";
+          div.innerHTML = `
+            <div class="head">${escapeHtml(event.timestamp || "")} | ${escapeHtml(event.event_type || "")} | task=${escapeHtml(event.task_id ?? "-")} | trial=${escapeHtml(event.trial ?? "-")}</div>
+            <pre>${escapeHtml(JSON.stringify(event, null, 2))}</pre>
+          `;
+          box.appendChild(div);
+        }
+      }
+
+      async function initEmbeddedList() {
+        const sel = document.getElementById("embeddedSelect");
+        sel.innerHTML = "";
+        try {
+          const res = await fetch("./manifest.json");
+          const data = await res.json();
+          const files = Array.isArray(data.files) ? data.files : [];
+          if (files.length === 0) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "（无内置日志，请用本地上传）";
+            sel.appendChild(opt);
+            return;
+          }
+          for (const f of files) {
+            const opt = document.createElement("option");
+            opt.value = f;
+            opt.textContent = f;
+            sel.appendChild(opt);
+          }
+        } catch (_) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "（manifest 不可用，请用本地上传）";
+          sel.appendChild(opt);
+        }
+      }
+
+      document.getElementById("fileInput").addEventListener("change", async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const text = await file.text();
+        document.getElementById("warning").textContent = hasPotentialSecret(text)
+          ? "警告：检测到疑似敏感字段，请确认日志已脱敏。"
+          : "";
+        allEvents = parseJsonl(text);
+        render();
+      });
+
+      document.getElementById("loadEmbeddedBtn").addEventListener("click", async () => {
+        const path = document.getElementById("embeddedSelect").value;
+        if (!path) return;
+        const res = await fetch("./data/" + path);
+        const text = await res.text();
+        document.getElementById("warning").textContent = hasPotentialSecret(text)
+          ? "警告：内置日志检测到疑似敏感字段，请先下线并清理。"
+          : "";
+        allEvents = parseJsonl(text);
+        render();
+      });
+
+      ["eventType", "taskId", "q", "limit"].forEach((id) => {
+        document.getElementById(id).addEventListener("input", render);
+      });
+
+      initEmbeddedList();
+    </script>
+  </body>
+</html>
