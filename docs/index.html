@@ -193,14 +193,20 @@
         }
         const rubrics = Array.isArray(ev.nl_rubrics) ? ev.nl_rubrics : [];
         const metCount = rubrics.filter((x) => x && x.met === true).length;
+        const failedRubrics = rubrics.filter((x) => x && x.met === false);
         let html =
           `<h3 style="margin:0 0 8px">最终评估结果（Evaluator）</h3>` +
           `<div class="summary">reward=<code>${esc(ev.reward)}</code> ｜ rubrics_met=<code>${metCount}/${rubrics.length}</code></div>`;
+        if (failedRubrics.length > 0) {
+          html += `<details open><summary>失败判定重点（默认展开）</summary><pre>${esc(JSON.stringify(failedRubrics, null, 2))}</pre></details>`;
+        } else {
+          html += `<details open><summary>失败判定重点（默认展开）</summary><div class="muted">无失败 rubric（全部通过）。</div></details>`;
+        }
         if (ev.reward_breakdown) {
           html += `<details open><summary>Reward Breakdown</summary><pre>${esc(JSON.stringify(ev.reward_breakdown, null, 2))}</pre></details>`;
         }
         if (rubrics.length > 0) {
-          html += `<details open><summary>NL Rubrics 判定明细</summary><pre>${esc(JSON.stringify(rubrics, null, 2))}</pre></details>`;
+          html += `<details><summary>NL Rubrics 判定明细</summary><pre>${esc(JSON.stringify(rubrics, null, 2))}</pre></details>`;
         }
         if (ev.info) {
           html += `<details><summary>Evaluator Additional Info</summary><pre>${esc(JSON.stringify(ev.info, null, 2))}</pre></details>`;
