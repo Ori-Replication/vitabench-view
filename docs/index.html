@@ -77,6 +77,18 @@
     <script>
       let loadedData = null;
       let simulations = [];
+      const AGENT_SYSTEM_PROMPT_TEMPLATE_ZH = `# 环境
+- 当前时间：{time}
+
+# 工具使用规范：
+- 当用户需求需要调工具来完成时，先判断是否已知全部参数信息，如果已知则抽取相应参数，否则询问用户相关参数值
+- 当用户无法提供相关信息时，首先通过工具获取相关信息
+- 参考Precondition和Postcondition完成任务
+
+# 对话规范
+- 仅利用上文已有信息，禁止无根据地构造信息并回复用户
+- 以完成用户需求为目标，禁止发散性引导用户提出新需求
+- 完成用户的任务需求后询问用户是否还有其他需求，如果用户表示没有，生成 '###STOP###' 标记来结束对话`;
 
       function esc(s) {
         return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -88,14 +100,85 @@
         return [];
       }
 
+      function getTaskById(taskId) {
+        const tasks = Array.isArray(loadedData?.tasks) ? loadedData.tasks : [];
+        return tasks.find((t) => String(t?.id) === String(taskId)) || null;
+      }
+
+      function formatWeekday(dateText) {
+        const d = new Date(String(dateText).replace(" ", "T"));
+        if (Number.isNaN(d.getTime())) return "";
+        const cn = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
+        return cn[d.getDay()] || "";
+      }
+
+      function buildInjectedSystemBlocks(sim) {
+        const task = getTaskById(sim?.task_id);
+        const blocks = [];
+        const info = loadedData?.info || {};
+
+        const userTemplate = info?.user_info?.global_simulation_guidelines || "";
+        const persona = task?.user_scenario?.user_profile ? JSON.stringify(task.user_scenario.user_profile, null, 2) : "";
+        const instructions = task?.instructions != null ? String(task.instructions) : "";
+        const renderedUserPrompt = userTemplate
+          ? userTemplate.replace("{persona}", persona).replace("{instructions}", instructions)
+          : "";
+
+        const envTime = task?.environment?.time || "";
+        const timeWithWeekday = envTime ? `${envTime} ${formatWeekday(envTime)}` : "";
+        const renderedAgentPrompt = AGENT_SYSTEM_PROMPT_TEMPLATE_ZH.replace("{time}", timeWithWeekday || envTime || "未知时间");
+
+        blocks.push({
+          kind: "injected_system_user",
+          role: "system",
+          title: "User Simulator System Prompt（运行时渲染）",
+          content: renderedUserPrompt || "无法从结果文件恢复 user system prompt。",
+          exact: Boolean(renderedUserPrompt),
+        });
+        blocks.push({
+          kind: "injected_system_agent_estimated",
+          role: "system",
+          title: "Agent System Prompt（可恢复部分）",
+          content: renderedAgentPrompt,
+          exact: false,
+          note: "该项仅能还原通用模板+时间。domain policy 的完整内容未落盘到 results.json，无法 100% 复原。",
+        });
+        blocks.push({
+          kind: "task_runtime_bundle",
+          role: "system",
+          title: "Task Runtime Bundle（任务/环境/评测约束）",
+          exact: true,
+          content: JSON.stringify(
+            {
+              task_id: task?.id,
+              domain: task?.domain,
+              environment: task?.environment,
+              user_scenario: task?.user_scenario,
+              instructions: task?.instructions,
+              evaluation_criteria: task?.evaluation_criteria,
+              message_history: task?.message_history,
+            },
+            null,
+            2
+          ),
+        });
+        return blocks;
+      }
+
       function getRoleKind(msg) {
         const role = msg?.role || "unknown";
         if (role === "assistant" || role === "user" || role === "system" || role === "tool") return role;
         return "unknown";
       }
 
-      function buildReceivedContext(messages, idx) {
+      function buildReceivedContext(messages, idx, sim, role) {
         const received = [];
+        const injected = buildInjectedSystemBlocks(sim);
+        if (role === "user") {
+          received.push(injected[0], injected[2]);
+        } else if (role === "assistant") {
+          received.push(injected[1], injected[2]);
+        }
         for (let i = 0; i < idx; i += 1) {
           const m = messages[i];
           if (!m || !m.role) continue;
@@ -109,13 +192,13 @@
         return received;
       }
 
-      function renderMessage(messages, msg, idx, keyword) {
+      function renderMessage(messages, sim, msg, idx, keyword) {
         const role = getRoleKind(msg);
         const text = JSON.stringify(msg).toLowerCase();
         if (keyword && !text.includes(keyword)) return "";
 
         const reason = msg?.reasoning || msg?.reasoning_content || msg?.raw_data?.message?.reasoning_content;
-        const receivedContext = buildReceivedContext(messages, idx);
+        const receivedContext = buildReceivedContext(messages, idx, sim, role);
         const body = [];
         if ((role === "assistant" || role === "user") && receivedContext.length) {
           body.push(`<details><summary>本轮接收到的完整信息（按顺序重建）</summary><pre>${esc(JSON.stringify(receivedContext, null, 2))}</pre></details>`);
@@ -172,7 +255,7 @@
         const msgs = Array.isArray(sim.messages) ? sim.messages : [];
         document.getElementById("summary").innerHTML =
           `task=<code>${esc(sim.task_id ?? "-")}</code> trial=<code>${esc(sim.trial ?? "-")}</code> termination=<code>${esc(sim.termination_reason ?? "-")}</code> reward=<code>${esc(sim.reward ?? "-")}</code> messages=<code>${msgs.length}</code>`;
-        timeline.innerHTML = msgs.map((m, i) => renderMessage(msgs, m, i, keyword)).filter(Boolean).join("");
+        timeline.innerHTML = msgs.map((m, i) => renderMessage(msgs, sim, m, i, keyword)).filter(Boolean).join("");
       }
 
       async function loadPayload(text) {
