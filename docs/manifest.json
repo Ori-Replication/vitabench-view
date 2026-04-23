@@ -1,3 +1,11 @@
 {
-  "simulation_files": []
+  "simulation_files": [
+    "20260421_084526_delivery,instore,ota_llm_agent_glm-5.1_user_simulator_glm-5.1.merged.json",
+    "20260421_130505_delivery_single_glm51.json",
+    "20260421_130505_instore_single_glm51.json",
+    "20260421_130505_ota_single_glm51.json",
+    "20260422_044815_cross_deepseek_v32_eval_glm51.json",
+    "20260423_031358_delivery_llm_agent_minimax-m2.7_user_simulator_glm-5.1.json",
+    "20260423_031430_delivery_llm_agent_minimax-m2.7_user_simulator_glm-5.1.json"
+  ]
 }
