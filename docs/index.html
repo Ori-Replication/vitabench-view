@@ -3,135 +3,163 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vita Log Viewer</title>
+    <title>Vita Trace Viewer</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 0; background: #f6f8fb; color: #1f2937; }
-      .top { background: #0f172a; color: #e2e8f0; padding: 10px 16px; }
-      .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
-      .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
-      .row { display: flex; flex-wrap: wrap; gap: 12px; }
-      .field { flex: 1; min-width: 240px; }
-      label { font-size: 12px; color: #64748b; display: block; margin-bottom: 4px; }
-      input, select, button { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid #cbd5e1; }
-      button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
-      .muted { color: #64748b; font-size: 12px; }
-      .events { max-height: 72vh; overflow: auto; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
-      .event { border-bottom: 1px solid #eef2f7; padding: 8px 4px; }
-      .event:last-child { border-bottom: none; }
-      .head { font-size: 13px; font-weight: bold; margin-bottom: 6px; }
-      pre { margin: 0; padding: 8px; border-radius: 8px; background: #0b1020; color: #d1d5db; font-size: 12px; overflow: auto; }
-      .warn { color: #b45309; }
+      :root { --bg:#f0f4f8; --card:#fff; --border:#e2e8f0; --text:#1e293b; --muted:#64748b; --user:#1d4ed8; --assistant:#6d28d9; --tool:#047857; --system:#475569; --reason:#0f766e; }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin:0; background:var(--bg); color:var(--text); }
+      .top { background:#0f172a; color:#e2e8f0; padding:10px 16px; }
+      .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+      .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px; }
+      .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+      .field { flex:1; min-width:220px; }
+      label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+      input, select, button { width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:14px; }
+      button { background:#2563eb; color:#fff; border:none; cursor:pointer; max-width:160px; }
+      .muted { color:var(--muted); font-size:12px; }
+      .timeline { display:flex; flex-direction:column; gap:12px; }
+      .msg { border-radius:12px; border:1px solid var(--border); background:var(--card); overflow:hidden; }
+      .msg-head { padding:8px 12px; font-weight:600; font-size:13px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+      .msg.user .msg-head { background:#eff6ff; color:var(--user); }
+      .msg.assistant .msg-head { background:#f5f3ff; color:var(--assistant); }
+      .msg.tool .msg-head, .msg.multi_tool .msg-head { background:#ecfdf5; color:var(--tool); }
+      .msg.system .msg-head { background:#f1f5f9; color:var(--system); }
+      .msg-body { padding:10px 12px 12px; font-size:13px; }
+      pre { margin:0; padding:10px; background:#0b1020; color:#e2e8f0; border-radius:8px; font-size:12px; line-height:1.45; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+      .summary { font-size:13px; }
+      .empty { color:var(--muted); padding:24px; text-align:center; }
+      details { margin-top:8px; border:1px dashed var(--border); border-radius:8px; padding:6px 8px; background:#fafafa; }
+      details summary { cursor:pointer; font-size:12px; color:var(--muted); }
     </style>
   </head>
   <body>
-    <div class="top"><strong>Vita Log Viewer</strong>（GitHub Pages 静态版）</div>
+    <div class="top"><strong>Vita Trace Viewer</strong>（GitHub Pages 静态只读版）</div>
     <div class="wrap">
       <div class="card">
         <div class="row">
           <div class="field">
-            <label>方式 A：上传本地 jsonl 日志</label>
-            <input id="fileInput" type="file" accept=".jsonl,.txt,.log" />
+            <label>方式 A：上传本地 simulation 结果 JSON</label>
+            <input id="fileInput" type="file" accept=".json" />
           </div>
           <div class="field">
-            <label>方式 B：加载仓库内日志（deploy/vita-log/data）</label>
+            <label>方式 B：加载仓库内 simulation JSON（docs/data）</label>
             <select id="embeddedSelect"></select>
           </div>
           <div class="field" style="flex:0">
             <label>&nbsp;</label>
-            <button id="loadEmbeddedBtn" type="button">加载仓库日志</button>
+            <button id="loadEmbeddedBtn" type="button">加载内置文件</button>
           </div>
         </div>
-        <p class="muted">
-          只上传/发布脱敏后的日志。请勿包含 Authorization、Bearer、sk_、cookie 等敏感字段。
-        </p>
+        <p class="muted">只读模式：仅展示 trace，不提供工具调用能力。</p>
       </div>
 
       <div class="card">
         <div class="row">
           <div class="field">
-            <label>Event Type 过滤</label>
-            <input id="eventType" placeholder="例如 tool_call_finished" />
+            <label>simulation 选择</label>
+            <select id="simSelect"></select>
           </div>
           <div class="field">
-            <label>Task ID 过滤</label>
-            <input id="taskId" placeholder="例如 1" />
+            <label>关键词过滤（message JSON）</label>
+            <input id="q" placeholder="例如 tool_call / reasoning / task_id" />
           </div>
-          <div class="field">
-            <label>关键词</label>
-            <input id="q" placeholder="全文搜索 JSON 文本" />
-          </div>
-          <div class="field">
-            <label>数量上限</label>
-            <input id="limit" type="number" value="500" />
+          <div class="field" style="flex:0">
+            <label>&nbsp;</label>
+            <button id="renderBtn" type="button">渲染轨迹</button>
           </div>
         </div>
-        <p id="meta" class="muted">尚未加载日志。</p>
-        <div id="warning" class="muted warn"></div>
-        <div id="events" class="events"></div>
+        <div id="summary" class="summary muted">尚未加载 simulation 数据。</div>
       </div>
+
+      <div id="timeline" class="timeline"></div>
+      <p id="placeholder" class="empty">请选择结果文件并渲染轨迹。</p>
     </div>
 
     <script>
-      let allEvents = [];
+      let loadedData = null;
+      let simulations = [];
 
-      function escapeHtml(s) {
-        return String(s ?? "")
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;");
+      function esc(s) {
+        return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       }
 
-      function parseJsonl(text) {
-        const out = [];
-        for (const raw of text.split(/\r?\n/)) {
-          const line = raw.trim();
-          if (!line) continue;
-          try {
-            out.push(JSON.parse(line));
-          } catch (_) {
-            // ignore invalid lines
-          }
+      function parseSimulations(payload) {
+        if (Array.isArray(payload?.simulations)) return payload.simulations;
+        if (Array.isArray(payload)) return payload;
+        return [];
+      }
+
+      function getRoleKind(msg) {
+        const role = msg?.role || "unknown";
+        if (role === "assistant" || role === "user" || role === "system" || role === "tool") return role;
+        return "unknown";
+      }
+
+      function renderMessage(msg, idx, keyword) {
+        const role = getRoleKind(msg);
+        const text = JSON.stringify(msg).toLowerCase();
+        if (keyword && !text.includes(keyword)) return "";
+
+        const reason = msg?.reasoning || msg?.reasoning_content || msg?.raw_data?.message?.reasoning_content;
+        const body = [];
+        if (reason) body.push(`<div><strong>思维链</strong></div><pre>${esc(reason)}</pre>`);
+        if (msg?.content != null && msg?.content !== "") body.push(`<div style="margin-top:8px"><strong>内容</strong></div><pre>${esc(msg.content)}</pre>`);
+        if (msg?.tool_calls?.length) body.push(`<details><summary>tool_calls</summary><pre>${esc(JSON.stringify(msg.tool_calls, null, 2))}</pre></details>`);
+        if (msg?.raw_data) body.push(`<details><summary>raw_data</summary><pre>${esc(JSON.stringify(msg.raw_data, null, 2))}</pre></details>`);
+        if (!body.length) body.push(`<pre>${esc(JSON.stringify(msg, null, 2))}</pre>`);
+
+        return `
+          <div class="msg ${esc(role)}">
+            <div class="msg-head">
+              <span>#${idx} · ${esc(role)}</span>
+              <span>${esc(msg.timestamp || "")}</span>
+            </div>
+            <div class="msg-body">${body.join("")}</div>
+          </div>
+        `;
+      }
+
+      function updateSimOptions() {
+        const sel = document.getElementById("simSelect");
+        sel.innerHTML = "";
+        if (!simulations.length) {
+          const o = document.createElement("option");
+          o.value = "";
+          o.textContent = "（无 simulation）";
+          sel.appendChild(o);
+          return;
         }
-        return out;
-      }
-
-      function hasPotentialSecret(text) {
-        return /Authorization|Bearer\\s+[A-Za-z0-9\\-\\._~\\+/]+=*|sk_[A-Za-z0-9]+|cookie/i.test(text);
-      }
-
-      function render() {
-        const eventType = document.getElementById("eventType").value.trim();
-        const taskId = document.getElementById("taskId").value.trim();
-        const q = document.getElementById("q").value.trim().toLowerCase();
-        const limit = Number(document.getElementById("limit").value || "500");
-
-        let filtered = allEvents.filter((e) => {
-          if (eventType && String(e.event_type || "") !== eventType) return false;
-          if (taskId && String(e.task_id ?? "") !== taskId) return false;
-          if (q) {
-            const text = JSON.stringify(e).toLowerCase();
-            if (!text.includes(q)) return false;
-          }
-          return true;
+        simulations.forEach((sim, i) => {
+          const o = document.createElement("option");
+          o.value = String(i);
+          o.textContent = `#${i} task=${sim.task_id ?? "-"} trial=${sim.trial ?? "-"} msgs=${Array.isArray(sim.messages) ? sim.messages.length : 0}`;
+          sel.appendChild(o);
         });
+      }
 
-        const truncated = filtered.length > limit;
-        if (truncated) filtered = filtered.slice(0, limit);
-
-        document.getElementById("meta").textContent =
-          `总事件 ${allEvents.length}，命中 ${filtered.length}` + (truncated ? `（已截断到 ${limit}）` : "");
-
-        const box = document.getElementById("events");
-        box.innerHTML = "";
-        for (const event of filtered) {
-          const div = document.createElement("div");
-          div.className = "event";
-          div.innerHTML = `
-            <div class="head">${escapeHtml(event.timestamp || "")} | ${escapeHtml(event.event_type || "")} | task=${escapeHtml(event.task_id ?? "-")} | trial=${escapeHtml(event.trial ?? "-")}</div>
-            <pre>${escapeHtml(JSON.stringify(event, null, 2))}</pre>
-          `;
-          box.appendChild(div);
+      function renderTimeline() {
+        const idx = Number(document.getElementById("simSelect").value || "0");
+        const keyword = document.getElementById("q").value.trim().toLowerCase();
+        const sim = simulations[idx];
+        const timeline = document.getElementById("timeline");
+        const placeholder = document.getElementById("placeholder");
+        if (!sim) {
+          timeline.innerHTML = "";
+          placeholder.style.display = "block";
+          return;
         }
+        placeholder.style.display = "none";
+        const msgs = Array.isArray(sim.messages) ? sim.messages : [];
+        document.getElementById("summary").innerHTML =
+          `task=<code>${esc(sim.task_id ?? "-")}</code> trial=<code>${esc(sim.trial ?? "-")}</code> termination=<code>${esc(sim.termination_reason ?? "-")}</code> reward=<code>${esc(sim.reward ?? "-")}</code> messages=<code>${msgs.length}</code>`;
+        timeline.innerHTML = msgs.map((m, i) => renderMessage(m, i, keyword)).filter(Boolean).join("");
+      }
+
+      async function loadPayload(text) {
+        const json = JSON.parse(text);
+        loadedData = json;
+        simulations = parseSimulations(json);
+        updateSimOptions();
+        renderTimeline();
       }
 
       async function initEmbeddedList() {
@@ -140,54 +168,52 @@
         try {
           const res = await fetch("./manifest.json");
           const data = await res.json();
-          const files = Array.isArray(data.files) ? data.files : [];
-          if (files.length === 0) {
-            const opt = document.createElement("option");
-            opt.value = "";
-            opt.textContent = "（无内置日志，请用本地上传）";
-            sel.appendChild(opt);
+          const files = Array.isArray(data.simulation_files) ? data.simulation_files : (Array.isArray(data.files) ? data.files : []);
+          if (!files.length) {
+            const o = document.createElement("option");
+            o.value = "";
+            o.textContent = "（无内置 simulation 文件）";
+            sel.appendChild(o);
             return;
           }
-          for (const f of files) {
-            const opt = document.createElement("option");
-            opt.value = f;
-            opt.textContent = f;
-            sel.appendChild(opt);
-          }
+          files.forEach((f) => {
+            const o = document.createElement("option");
+            o.value = f;
+            o.textContent = f;
+            sel.appendChild(o);
+          });
         } catch (_) {
-          const opt = document.createElement("option");
-          opt.value = "";
-          opt.textContent = "（manifest 不可用，请用本地上传）";
-          sel.appendChild(opt);
+          const o = document.createElement("option");
+          o.value = "";
+          o.textContent = "（manifest 不可用）";
+          sel.appendChild(o);
         }
       }
 
       document.getElementById("fileInput").addEventListener("change", async (e) => {
-        const file = e.target.files && e.target.files[0];
+        const file = e.target.files?.[0];
         if (!file) return;
-        const text = await file.text();
-        document.getElementById("warning").textContent = hasPotentialSecret(text)
-          ? "警告：检测到疑似敏感字段，请确认日志已脱敏。"
-          : "";
-        allEvents = parseJsonl(text);
-        render();
+        try {
+          await loadPayload(await file.text());
+        } catch (err) {
+          document.getElementById("summary").textContent = "解析失败：" + err;
+        }
       });
 
       document.getElementById("loadEmbeddedBtn").addEventListener("click", async () => {
-        const path = document.getElementById("embeddedSelect").value;
-        if (!path) return;
-        const res = await fetch("./data/" + path);
-        const text = await res.text();
-        document.getElementById("warning").textContent = hasPotentialSecret(text)
-          ? "警告：内置日志检测到疑似敏感字段，请先下线并清理。"
-          : "";
-        allEvents = parseJsonl(text);
-        render();
+        const p = document.getElementById("embeddedSelect").value;
+        if (!p) return;
+        try {
+          const res = await fetch("./data/" + p);
+          await loadPayload(await res.text());
+        } catch (err) {
+          document.getElementById("summary").textContent = "加载失败：" + err;
+        }
       });
 
-      ["eventType", "taskId", "q", "limit"].forEach((id) => {
-        document.getElementById(id).addEventListener("input", render);
-      });
+      document.getElementById("renderBtn").addEventListener("click", renderTimeline);
+      document.getElementById("simSelect").addEventListener("change", renderTimeline);
+      document.getElementById("q").addEventListener("input", renderTimeline);
 
       initEmbeddedList();
     </script>
